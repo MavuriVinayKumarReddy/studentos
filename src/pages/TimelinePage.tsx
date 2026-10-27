@@ -10,53 +10,119 @@ import {
   startOfWeek,
   endOfWeek,
 } from 'date-fns'
-import { CalendarDays, LayoutList, GanttChart } from 'lucide-react'
+import {
+  CalendarDays,
+  LayoutList,
+  GanttChart,
+  Plus,
+} from 'lucide-react'
 import { useAppData } from '@/context/AppDataContext'
 import { TaskCard } from '@/components/tasks/TaskCard'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { filterTasks, sortTasks } from '@/lib/task-logic'
 import {
   formatDueCountdown,
   formatLocalDate,
   relativeDayLabel,
   toLocalDateString,
+  isDueToday,
+  isOverdue,
 } from '@/lib/dates'
-import { TASK_TYPES, PRIORITIES, TASK_STATUSES } from '@/lib/constants'
-import type { Priority, TaskSortBy, TaskStatus, TaskType } from '@/types'
+import { TASK_TYPES, PRIORITIES } from '@/lib/constants'
+import { Priority, TaskStatus, TaskType, type TaskSortBy } from '@/types'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
 type ViewMode = 'timeline' | 'calendar' | 'list'
+type FilterTab = 'all' | 'today' | 'upcoming' | 'overdue' | 'deadlines' | 'completed'
 
 export function TimelinePage() {
   const [params] = useSearchParams()
-  const { tasks, subjects, loading, toggleTaskComplete, getSubject } = useAppData()
+  const { tasks, subjects, loading, toggleTaskComplete, createTask, getSubject, userId } =
+    useAppData()
+
   const [view, setView] = useState<ViewMode>('timeline')
+  const [activeTab, setActiveTab] = useState<FilterTab>(
+    (params.get('status') as FilterTab) || 'all',
+  )
   const [search, setSearch] = useState(params.get('q') ?? '')
   const [subjectId, setSubjectId] = useState(params.get('subject') ?? '')
   const [type, setType] = useState('')
   const [priority, setPriority] = useState('')
-  const [status, setStatus] = useState('')
   const [sortBy, setSortBy] = useState<TaskSortBy>('dueDate')
-  const [includeCompleted, setIncludeCompleted] = useState(false)
   const [calMonth, setCalMonth] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState(toLocalDateString())
 
+  // Quick Add Modal state
+  const [addModalOpen, setAddModalOpen] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+  const [newSubjectId, setNewSubjectId] = useState('')
+  const [newType, setNewType] = useState<TaskType>(TaskType.Assignment)
+  const [newDueDate, setNewDueDate] = useState(toLocalDateString())
+  const [newDueTime, setNewDueTime] = useState('')
+  const [newPriority, setNewPriority] = useState<Priority>(Priority.Medium)
+  const [newNotes, setNewNotes] = useState('')
+  const [savingTask, setSavingTask] = useState(false)
+
+  const activeSubjects = useMemo(() => subjects.filter((s) => !s.archived), [subjects])
+
+  // Apply tab filter on top of base filters
+  const tabFilteredTasks = useMemo(() => {
+    const today = toLocalDateString()
+    const next7Days = toLocalDateString(addDays(new Date(), 7))
+
+    return tasks.filter((t) => {
+      if (activeTab === 'today') {
+        return isDueToday(t.dueDate) && t.status !== TaskStatus.Completed
+      }
+      if (activeTab === 'upcoming') {
+        return (
+          t.dueDate >= today &&
+          t.dueDate <= next7Days &&
+          t.status !== TaskStatus.Completed
+        )
+      }
+      if (activeTab === 'overdue') {
+        return isOverdue(t.dueDate, t.dueTime) && t.status !== TaskStatus.Completed
+      }
+      if (activeTab === 'deadlines') {
+        const isDeadlineType =
+          t.type === TaskType.Exam ||
+          t.type === TaskType.Quiz ||
+          t.type === TaskType.Project ||
+          t.priority === Priority.High ||
+          t.priority === Priority.Urgent
+        return isDeadlineType && t.status !== TaskStatus.Completed
+      }
+      if (activeTab === 'completed') {
+        return t.status === TaskStatus.Completed
+      }
+      return true
+    })
+  }, [tasks, activeTab])
+
   const filtered = useMemo(() => {
-    const list = filterTasks(tasks, {
+    const list = filterTasks(tabFilteredTasks, {
       search: search || undefined,
       subjectId: subjectId || undefined,
       type: (type as TaskType) || undefined,
       priority: (priority as Priority) || undefined,
-      status: (status as TaskStatus) || undefined,
-      includeCompleted,
+      includeCompleted: true,
     })
     return sortTasks(list, sortBy)
-  }, [tasks, search, subjectId, type, priority, status, includeCompleted, sortBy])
+  }, [tabFilteredTasks, search, subjectId, type, priority, sortBy])
 
   const grouped = useMemo(() => {
     const map = new Map<string, typeof filtered>()
@@ -71,8 +137,41 @@ export function TimelinePage() {
   const onToggle = async (id: string) => {
     try {
       await toggleTaskComplete(id)
+      toast.success('Task status updated')
     } catch {
       toast.error('Could not update task')
+    }
+  }
+
+  const handleCreate = async () => {
+    if (!newTitle.trim()) {
+      toast.error('Title is required')
+      return
+    }
+    setSavingTask(true)
+    try {
+      await createTask({
+        userId,
+        title: newTitle.trim(),
+        subjectId: newSubjectId || null,
+        type: newType,
+        dueDate: newDueDate,
+        dueTime: newDueTime || undefined,
+        priority: newPriority,
+        status: TaskStatus.NotStarted,
+        tentative: false,
+        notes: newNotes.trim() || undefined,
+        tags: newType === TaskType.Exam || newType === TaskType.Quiz ? ['deadline'] : [],
+        subtasks: [],
+      })
+      toast.success('Task created')
+      setNewTitle('')
+      setNewNotes('')
+      setAddModalOpen(false)
+    } catch {
+      toast.error('Failed to create task')
+    } finally {
+      setSavingTask(false)
     }
   }
 
@@ -92,54 +191,110 @@ export function TimelinePage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 pb-8">
+    <div className="mx-auto max-w-5xl space-y-5 pb-12">
+      {/* Page Header */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl font-bold text-[var(--navy)] dark:text-foreground">
-            Lesson Schedule
+            Tasks & Deadlines
           </h1>
-          <p className="text-sm text-muted-foreground">Deadlines, calendar, and list views</p>
+          <p className="text-sm text-muted-foreground">
+            Track assignments, exams, homework, and deadlines
+          </p>
         </div>
-        <div className="flex rounded-2xl bg-card p-1 shadow-sm">
-          {(
-            [
-              ['timeline', GanttChart, 'Timeline'],
-              ['calendar', CalendarDays, 'Calendar'],
-              ['list', LayoutList, 'List'],
-            ] as const
-          ).map(([id, Icon, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setView(id)}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium',
-                view === id ? 'bg-primary text-white' : 'text-muted-foreground hover:bg-muted',
-              )}
-            >
-              <Icon className="size-4" />
-              <span className="hidden sm:inline">{label}</span>
-            </button>
-          ))}
+
+        <div className="flex items-center gap-2">
+          {/* Add Task Button */}
+          <Button onClick={() => setAddModalOpen(true)} className="rounded-xl shadow-xs">
+            <Plus className="size-4 mr-1" /> Add Task
+          </Button>
+
+          {/* View Mode Switcher */}
+          <div className="flex rounded-2xl bg-card p-1 shadow-xs border border-border/70">
+            {(
+              [
+                ['timeline', GanttChart, 'Timeline'],
+                ['calendar', CalendarDays, 'Calendar'],
+                ['list', LayoutList, 'List'],
+              ] as const
+            ).map(([id, Icon, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setView(id)}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition',
+                  view === id
+                    ? 'bg-primary text-white shadow-xs'
+                    : 'text-muted-foreground hover:bg-muted',
+                )}
+              >
+                <Icon className="size-3.5" />
+                <span className="hidden sm:inline">{label}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Quick Filter Tabs */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+        {(
+          [
+            ['all', 'All Tasks'],
+            ['today', 'Today'],
+            ['upcoming', 'Upcoming (7d)'],
+            ['overdue', 'Overdue'],
+            ['deadlines', 'Deadlines & Exams'],
+            ['completed', 'Completed'],
+          ] as const
+        ).map(([tabKey, label]) => {
+          const active = activeTab === tabKey
+          return (
+            <button
+              key={tabKey}
+              type="button"
+              onClick={() => setActiveTab(tabKey)}
+              className={cn(
+                'shrink-0 rounded-full px-3.5 py-1.5 font-semibold transition border',
+                active
+                  ? 'bg-primary text-primary-foreground border-primary shadow-xs'
+                  : 'bg-card border-border/70 text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Search and Secondary Filter Controls */}
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
         <Input
-          placeholder="Search…"
+          placeholder="Search tasks, notes, tags…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="rounded-xl bg-card"
+          className="rounded-xl bg-card text-xs h-9"
         />
-        <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)} className="rounded-xl">
+
+        <Select
+          value={subjectId}
+          onChange={(e) => setSubjectId(e.target.value)}
+          className="rounded-xl text-xs h-9"
+        >
           <option value="">All subjects</option>
-          {subjects.map((s) => (
+          {activeSubjects.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name}
             </option>
           ))}
         </Select>
-        <Select value={type} onChange={(e) => setType(e.target.value)} className="rounded-xl">
+
+        <Select
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          className="rounded-xl text-xs h-9"
+        >
           <option value="">All types</option>
           {TASK_TYPES.map((t) => (
             <option key={t} value={t}>
@@ -147,7 +302,12 @@ export function TimelinePage() {
             </option>
           ))}
         </Select>
-        <Select value={priority} onChange={(e) => setPriority(e.target.value)} className="rounded-xl">
+
+        <Select
+          value={priority}
+          onChange={(e) => setPriority(e.target.value)}
+          className="rounded-xl text-xs h-9"
+        >
           <option value="">All priorities</option>
           {PRIORITIES.map((p) => (
             <option key={p} value={p}>
@@ -155,47 +315,39 @@ export function TimelinePage() {
             </option>
           ))}
         </Select>
-        <Select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-xl">
-          <option value="">All statuses</option>
-          {TASK_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </Select>
+
         <Select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as TaskSortBy)}
-          className="rounded-xl"
+          className="rounded-xl text-xs h-9"
         >
-          <option value="dueDate">Nearest deadline</option>
-          <option value="priority">Priority</option>
-          <option value="urgency">Urgency</option>
+          <option value="dueDate">Deadline (Earliest first)</option>
+          <option value="priority">Priority (Highest first)</option>
+          <option value="urgency">Urgency score</option>
           <option value="createdAt">Recently created</option>
-          <option value="title">Title</option>
+          <option value="title">Title (A-Z)</option>
         </Select>
       </div>
-      <label className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Checkbox
-          checked={includeCompleted}
-          onChange={(e) => setIncludeCompleted(e.target.checked)}
-        />
-        Show completed
-      </label>
 
+      {/* Main Views */}
       {view === 'timeline' && (
         <div className="space-y-6">
           {grouped.length === 0 ? (
-            <EmptyState title="No matching tasks" description="Try clearing filters or add a new deadline." />
+            <EmptyState
+              title="No matching tasks"
+              description="No tasks match your selected tab and filters."
+              actionLabel="Add task"
+              onAction={() => setAddModalOpen(true)}
+            />
           ) : (
             grouped.map(([date, items]) => (
               <section key={date}>
                 <div className="mb-3 flex items-center gap-3">
                   <div className="size-2 rounded-full bg-primary" />
-                  <h2 className="font-display text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                    {relativeDayLabel(date)} · {formatLocalDate(date, 'MMM d')}
+                  <h2 className="font-display text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    {relativeDayLabel(date)} · {formatLocalDate(date, 'EEEE, MMM d')}
                   </h2>
-                  <div className="h-px flex-1 bg-border" />
+                  <div className="h-px flex-1 bg-border/60" />
                 </div>
                 <div className="relative ml-1 space-y-3 border-l-2 border-primary/20 pl-4">
                   {items.map((t) => (
@@ -215,31 +367,33 @@ export function TimelinePage() {
 
       {view === 'calendar' && (
         <div className="space-y-4">
-          <div className="rounded-2xl bg-card p-4 shadow-[var(--shadow-card)]">
+          <div className="rounded-2xl bg-card p-4 shadow-[var(--shadow-card)] border border-border/70">
             <div className="mb-3 flex items-center justify-between">
-              <button
-                type="button"
-                className="rounded-lg px-2 py-1 text-sm hover:bg-muted"
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setCalMonth(addDays(startOfMonth(calMonth), -1))}
               >
                 Prev
-              </button>
-              <h2 className="font-display font-semibold">{format(calMonth, 'MMMM yyyy')}</h2>
-              <button
-                type="button"
-                className="rounded-lg px-2 py-1 text-sm hover:bg-muted"
+              </Button>
+              <h2 className="font-display font-bold text-base">{format(calMonth, 'MMMM yyyy')}</h2>
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setCalMonth(addDays(endOfMonth(calMonth), 1))}
               >
                 Next
-              </button>
+              </Button>
             </div>
-            <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-muted-foreground">
+
+            <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-muted-foreground mb-1">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
                 <div key={d} className="py-1">
                   {d}
                 </div>
               ))}
             </div>
+
             <div className="grid grid-cols-7 gap-1">
               {calDays.map((day) => {
                 const key = toLocalDateString(day)
@@ -252,9 +406,9 @@ export function TimelinePage() {
                     type="button"
                     onClick={() => setSelectedDay(key)}
                     className={cn(
-                      'relative flex aspect-square flex-col items-center justify-center rounded-xl text-sm',
-                      !inMonth && 'opacity-40',
-                      selected && 'bg-primary text-white',
+                      'relative flex aspect-square flex-col items-center justify-center rounded-xl text-xs font-semibold transition',
+                      !inMonth && 'opacity-30',
+                      selected && 'bg-primary text-white shadow-xs',
                       !selected && 'hover:bg-muted',
                     )}
                   >
@@ -272,12 +426,13 @@ export function TimelinePage() {
               })}
             </div>
           </div>
-          <h3 className="font-display font-semibold">
-            Upcoming · {formatLocalDate(selectedDay, 'MMMM d')}
+
+          <h3 className="font-display font-bold text-sm">
+            Scheduled for {formatLocalDate(selectedDay, 'EEEE, MMMM d')}
           </h3>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {filtered.filter((t) => t.dueDate === selectedDay).length === 0 ? (
-              <EmptyState title="No deadlines this day" />
+              <EmptyState title="No tasks or deadlines on this day" />
             ) : (
               filtered
                 .filter((t) => t.dueDate === selectedDay)
@@ -295,34 +450,37 @@ export function TimelinePage() {
       )}
 
       {view === 'list' && (
-        <div className="overflow-x-auto rounded-2xl bg-card shadow-[var(--shadow-card)]">
+        <div className="overflow-x-auto rounded-2xl bg-card shadow-[var(--shadow-card)] border border-border/70">
           <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="border-b border-border text-xs uppercase text-muted-foreground">
+            <thead className="border-b border-border text-xs uppercase font-semibold text-muted-foreground bg-muted/30">
               <tr>
-                <th className="p-3">Done</th>
+                <th className="p-3 w-12">Done</th>
                 <th className="p-3">Subject</th>
-                <th className="p-3">Task</th>
-                <th className="p-3">Due</th>
+                <th className="p-3">Task / Deadline</th>
+                <th className="p-3">Due Date</th>
                 <th className="p-3">Priority</th>
                 <th className="p-3">Status</th>
-                <th className="p-3">Files</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((t) => {
                 const sub = getSubject(t.subjectId)
+                const isDeadline =
+                  t.type === TaskType.Exam ||
+                  t.type === TaskType.Quiz ||
+                  t.type === TaskType.Project
                 return (
-                  <tr key={t.id} className="border-b border-border/60 hover:bg-muted/40">
+                  <tr key={t.id} className="border-b border-border/60 hover:bg-muted/30 transition">
                     <td className="p-3">
                       <Checkbox
-                        checked={t.status === 'Completed'}
+                        checked={t.status === TaskStatus.Completed}
                         onChange={() => onToggle(t.id)}
                       />
                     </td>
                     <td className="p-3">
                       {sub ? (
                         <span
-                          className="rounded-full px-2 py-0.5 text-xs font-semibold text-white"
+                          className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-white"
                           style={{
                             background: `linear-gradient(135deg, ${sub.colorFrom}, ${sub.colorTo})`,
                           }}
@@ -330,24 +488,46 @@ export function TimelinePage() {
                           {sub.code || sub.name}
                         </span>
                       ) : (
-                        '—'
+                        <span className="text-muted-foreground text-xs">—</span>
                       )}
                     </td>
                     <td className="p-3">
-                      <a href={`/tasks/${t.id}`} className="font-medium hover:text-primary">
+                      <a href={`/tasks/${t.id}`} className="font-semibold hover:text-primary">
                         {t.title}
                       </a>
-                      <div className="text-xs text-muted-foreground">{t.type}</div>
+                      <div className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                        {isDeadline ? (
+                          <span className="text-purple-600 dark:text-purple-400 font-medium">
+                            Deadline ({t.type})
+                          </span>
+                        ) : (
+                          t.type
+                        )}
+                        {(t.attachments?.length ?? 0) > 0 && (
+                          <span>· {t.attachments!.length} attachment(s)</span>
+                        )}
+                      </div>
                     </td>
-                    <td className="p-3">
-                      <div>{formatLocalDate(t.dueDate, 'MMM d')}</div>
-                      <div className="text-xs text-muted-foreground">
+                    <td className="p-3 text-xs">
+                      <div className="font-medium">{formatLocalDate(t.dueDate, 'MMM d, yyyy')}</div>
+                      <div className="text-muted-foreground">
                         {formatDueCountdown(t.dueDate, t.dueTime)}
                       </div>
                     </td>
-                    <td className="p-3">{t.priority}</td>
-                    <td className="p-3">{t.status}</td>
-                    <td className="p-3">{t.attachments?.length ?? 0}</td>
+                    <td className="p-3">
+                      <span
+                        className={cn(
+                          'rounded-md px-2 py-0.5 text-xs font-semibold',
+                          t.priority === Priority.Urgent && 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300',
+                          t.priority === Priority.High && 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+                          t.priority === Priority.Medium && 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
+                          t.priority === Priority.Low && 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+                        )}
+                      >
+                        {t.priority}
+                      </span>
+                    </td>
+                    <td className="p-3 text-xs text-muted-foreground">{t.status}</td>
                   </tr>
                 )
               })}
@@ -355,11 +535,115 @@ export function TimelinePage() {
           </table>
           {filtered.length === 0 && (
             <div className="p-6">
-              <EmptyState title="No tasks" />
+              <EmptyState title="No matching tasks" />
             </div>
           )}
         </div>
       )}
+
+      {/* Quick Add Task Dialog */}
+      <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display">Add Task / Deadline</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2 text-xs">
+            <div>
+              <label className="font-semibold block mb-1">Title *</label>
+              <Input
+                placeholder="Task title or exam topic…"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                autoFocus
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="font-semibold block mb-1">Subject</label>
+                <Select
+                  value={newSubjectId}
+                  onChange={(e) => setNewSubjectId(e.target.value)}
+                >
+                  <option value="">No subject</option>
+                  {activeSubjects.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+
+              <div>
+                <label className="font-semibold block mb-1">Type</label>
+                <Select
+                  value={newType}
+                  onChange={(e) => setNewType(e.target.value as TaskType)}
+                >
+                  <option value={TaskType.Assignment}>Assignment</option>
+                  <option value={TaskType.Exam}>Exam (Deadline)</option>
+                  <option value={TaskType.Quiz}>Quiz (Deadline)</option>
+                  <option value={TaskType.Project}>Project (Deadline)</option>
+                  <option value={TaskType.Lab}>Lab</option>
+                  <option value={TaskType.Reading}>Reading</option>
+                  <option value={TaskType.DSAPractice}>DSA Practice</option>
+                  <option value={TaskType.Personal}>Personal</option>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="font-semibold block mb-1">Due Date</label>
+                <Input
+                  type="date"
+                  value={newDueDate}
+                  onChange={(e) => setNewDueDate(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold block mb-1">Due Time (optional)</label>
+                <Input
+                  type="time"
+                  value={newDueTime}
+                  onChange={(e) => setNewDueTime(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="font-semibold block mb-1">Priority</label>
+              <Select
+                value={newPriority}
+                onChange={(e) => setNewPriority(e.target.value as Priority)}
+              >
+                <option value={Priority.Low}>Low</option>
+                <option value={Priority.Medium}>Medium</option>
+                <option value={Priority.High}>High</option>
+                <option value={Priority.Urgent}>Urgent</option>
+              </Select>
+            </div>
+
+            <div>
+              <label className="font-semibold block mb-1">Notes / Description (optional)</label>
+              <Input
+                placeholder="Details, chapters, guidelines…"
+                value={newNotes}
+                onChange={(e) => setNewNotes(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreate} disabled={savingTask}>
+              {savingTask ? 'Saving…' : 'Save Task'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

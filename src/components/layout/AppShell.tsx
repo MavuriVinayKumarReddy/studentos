@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Outlet } from 'react-router-dom'
+import { WifiOff } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { BottomNav } from '@/components/layout/BottomNav'
 import { Header } from '@/components/layout/Header'
@@ -42,6 +43,20 @@ export function AppShell({
   const [subjectId, setSubjectId] = useState<string>('')
   const [dueDate, setDueDate] = useState(toLocalDateString())
   const [saving, setSaving] = useState(false)
+  const [isOffline, setIsOffline] = useState(
+    () => typeof navigator !== 'undefined' && !navigator.onLine,
+  )
+
+  useEffect(() => {
+    const onOffline = () => setIsOffline(true)
+    const onOnline = () => setIsOffline(false)
+    window.addEventListener('offline', onOffline)
+    window.addEventListener('online', onOnline)
+    return () => {
+      window.removeEventListener('offline', onOffline)
+      window.removeEventListener('online', onOnline)
+    }
+  }, [])
 
   const handleAdd = async () => {
     if (!titleInput.trim()) {
@@ -89,6 +104,13 @@ export function AppShell({
             }
           />
         ) : null}
+
+        {isOffline && (
+          <div className="flex items-center justify-center gap-1.5 border-b border-amber-500/20 bg-amber-500/10 px-4 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-200">
+            <WifiOff className="size-3.5 shrink-0" />
+            <span>Offline mode — your student records and saved PDFs remain fully accessible.</span>
+          </div>
+        )}
 
         <main
           className={cn(

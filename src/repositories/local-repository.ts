@@ -1,10 +1,11 @@
-import { addDays, format } from 'date-fns'
+import { addDays } from 'date-fns'
 
-import { DEMO_SUBJECTS, DEMO_USER_ID, MAX_FILE_SIZE } from '@/lib/constants'
+import { DEMO_USER_ID, MAX_FILE_SIZE, SUBJECT_COLORS } from '@/lib/constants'
 import { toLocalDateString } from '@/lib/dates'
 import { getDB } from '@/repositories/db'
 import type {
   AppNotification,
+  AttendanceRecord,
   DsaProblem,
   FileBlobRecord,
   LearningResource,
@@ -23,7 +24,6 @@ import type {
 import {
   DsaDifficulty,
   DsaStatus,
-  MilestoneStatus,
   NotificationType,
   Priority,
   ProjectStatus,
@@ -83,12 +83,17 @@ export class LocalRepository {
   }
 
   private async seedIfEmpty(userId: string): Promise<void> {
-    const seeded = await getMeta<boolean>('seeded')
-    if (seeded) return
+    const initialized =
+      (await getMeta<boolean>('first-run-initialized')) ||
+      (await getMeta<boolean>('seeded'))
+    if (initialized) return
 
     const db = await getDB()
     const subjectCount = await db.count('subjects')
-    if (subjectCount > 0) {
+    const taskCount = await db.count('tasks')
+    if (subjectCount > 0 || taskCount > 0) {
+      // Existing user data found — never overwrite or inject samples
+      await setMeta('first-run-initialized', true)
       await setMeta('seeded', true)
       return
     }
@@ -96,14 +101,19 @@ export class LocalRepository {
     const ts = nowIso()
     const today = new Date()
 
+    let initialName = 'Student'
+    try {
+      const stored = localStorage.getItem('studentos-display-name')?.trim()
+      if (stored) initialName = stored
+    } catch {
+      /* ignore */
+    }
+
     const profile: Profile = {
       id: newId(),
       userId,
-      displayName: 'Alex Student',
-      email: 'alex@studentos.app',
-      major: 'Computer Science',
-      university: 'State University',
-      year: 'Junior',
+      displayName: initialName,
+      email: 'student@studentos.local',
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       preferences: {
         theme: 'system',
@@ -117,291 +127,64 @@ export class LocalRepository {
     }
     await db.put('profiles', profile)
 
-    const subjects: Subject[] = DEMO_SUBJECTS.map((s, index) => ({
+    // Exactly one sample subject (editable and deletable)
+    const color = SUBJECT_COLORS[0]!
+    const sampleSubject: Subject = {
       id: newId(),
       userId,
-      name: s.name,
-      code: s.code,
-      colorId: s.colorId,
-      colorFrom: s.colorFrom,
-      colorTo: s.colorTo,
-      sortOrder: index,
+      name: 'Introduction to Computer Science (Sample)',
+      code: 'CS101',
+      colorId: color.id,
+      colorFrom: color.from,
+      colorTo: color.to,
+      instructor: 'Prof. Turing',
+      semester: 'Current Term',
+      attendanceTarget: 75,
+      schedule: [
+        { id: newId(), dayOfWeek: 1, startTime: '10:00', endTime: '11:30', room: 'Hall A' },
+        { id: newId(), dayOfWeek: 3, startTime: '10:00', endTime: '11:30', room: 'Hall A' },
+      ],
+      sortOrder: 0,
       archived: false,
       createdAt: ts,
       updatedAt: ts,
-    }))
-    for (const subject of subjects) {
-      await db.put('subjects', subject)
     }
+    await db.put('subjects', sampleSubject)
 
-    const byName = Object.fromEntries(subjects.map((s) => [s.name, s])) as Record<
-      string,
-      Subject
-    >
-
-    const sampleTasks: Task[] = [
-      {
-        id: newId(),
-        userId,
-        title: 'Calculus problem set 4',
-        subjectId: byName.Mathematics!.id,
-        type: TaskType.Assignment,
-        description: 'Sections 4.1–4.3 odd problems',
-        dueDate: toLocalDateString(addDays(today, 1)),
-        dueTime: '23:59',
-        priority: Priority.High,
-        status: TaskStatus.InProgress,
-        tentative: false,
-        estimatedMinutes: 90,
-        tags: ['homework', 'calc'],
-        subtasks: [
-          { id: newId(), title: '4.1 odds', completed: true, sortOrder: 0 },
-          { id: newId(), title: '4.2 odds', completed: false, sortOrder: 1 },
-          { id: newId(), title: '4.3 odds', completed: false, sortOrder: 2 },
-        ],
-        notes: 'Office hours Wed 3pm',
-        createdAt: ts,
-        updatedAt: ts,
-      },
-      {
-        id: newId(),
-        userId,
-        title: 'Organic chemistry midterm',
-        subjectId: byName.Chemistry!.id,
-        type: TaskType.Exam,
-        description: 'Chapters 1–6, mechanisms & nomenclature',
-        dueDate: toLocalDateString(addDays(today, 5)),
-        dueTime: '10:00',
-        priority: Priority.Urgent,
-        status: TaskStatus.NotStarted,
-        tentative: false,
-        estimatedMinutes: 180,
-        tags: ['exam', 'midterm'],
-        subtasks: [
-          { id: newId(), title: 'Review flashcards', completed: false },
-          { id: newId(), title: 'Practice mechanisms', completed: false },
-        ],
-        createdAt: ts,
-        updatedAt: ts,
-      },
-      {
-        id: newId(),
-        userId,
-        title: 'Lab report — projectile motion',
-        subjectId: byName.Physics!.id,
-        type: TaskType.Lab,
-        dueDate: toLocalDateString(addDays(today, 3)),
-        dueTime: '17:00',
-        priority: Priority.Medium,
-        status: TaskStatus.NotStarted,
-        tentative: false,
-        estimatedMinutes: 120,
-        tags: ['lab'],
-        subtasks: [],
-        createdAt: ts,
-        updatedAt: ts,
-      },
-      {
-        id: newId(),
-        userId,
-        title: 'Logical puzzles worksheet',
-        subjectId: byName.Reasoning!.id,
-        type: TaskType.Assignment,
-        dueDate: toLocalDateString(today),
-        dueTime: '20:00',
-        priority: Priority.Medium,
-        status: TaskStatus.InProgress,
-        tentative: false,
-        estimatedMinutes: 45,
-        tags: ['practice'],
-        subtasks: [],
-        createdAt: ts,
-        updatedAt: ts,
-      },
-      {
-        id: newId(),
-        userId,
-        title: 'Cell biology reading',
-        subjectId: byName.Biology!.id,
-        type: TaskType.Reading,
-        dueDate: toLocalDateString(addDays(today, 2)),
-        priority: Priority.Low,
-        status: TaskStatus.NotStarted,
-        tentative: true,
-        estimatedMinutes: 60,
-        tags: ['reading'],
-        subtasks: [],
-        createdAt: ts,
-        updatedAt: ts,
-      },
-      {
-        id: newId(),
-        userId,
-        title: 'Regression analysis quiz',
-        subjectId: byName.Statistics!.id,
-        type: TaskType.Quiz,
-        dueDate: toLocalDateString(addDays(today, 4)),
-        dueTime: '14:00',
-        priority: Priority.High,
-        status: TaskStatus.NotStarted,
-        tentative: false,
-        estimatedMinutes: 40,
-        tags: ['quiz'],
-        subtasks: [],
-        createdAt: ts,
-        updatedAt: ts,
-      },
-      {
-        id: newId(),
-        userId,
-        title: 'Two Sum — DSA practice',
-        subjectId: byName['Computer Science']!.id,
-        type: TaskType.DSAPractice,
-        dueDate: toLocalDateString(today),
-        priority: Priority.Medium,
-        status: TaskStatus.NotStarted,
-        tentative: false,
-        estimatedMinutes: 30,
-        tags: ['dsa', 'arrays'],
-        subtasks: [],
-        createdAt: ts,
-        updatedAt: ts,
-      },
-      {
-        id: newId(),
-        userId,
-        title: 'Supply & demand essay outline',
-        subjectId: byName.Economics!.id,
-        type: TaskType.Assignment,
-        dueDate: toLocalDateString(addDays(today, 7)),
-        priority: Priority.Low,
-        status: TaskStatus.NotStarted,
-        tentative: false,
-        estimatedMinutes: 75,
-        tags: ['essay'],
-        subtasks: [],
-        createdAt: ts,
-        updatedAt: ts,
-      },
-    ]
-
-    for (const task of sampleTasks) {
-      await db.put('tasks', task)
+    // Exactly one sample task (editable and deletable)
+    const sampleTask: Task = {
+      id: newId(),
+      userId,
+      title: 'Welcome to StudentOS — Explore your dashboard (Sample)',
+      subjectId: sampleSubject.id,
+      type: TaskType.Assignment,
+      description:
+        'Explore your courses, track attendance, attach PDFs, and take notes. You can freely edit or delete this sample task.',
+      dueDate: toLocalDateString(addDays(today, 2)),
+      dueTime: '18:00',
+      priority: Priority.Medium,
+      status: TaskStatus.NotStarted,
+      tentative: false,
+      estimatedMinutes: 30,
+      tags: ['sample', 'getting-started'],
+      subtasks: [
+        { id: newId(), title: 'Check today’s schedule on the dashboard', completed: false, sortOrder: 0 },
+        { id: newId(), title: 'Record class attendance for your sample subject', completed: false, sortOrder: 1 },
+        { id: newId(), title: 'Try attaching a PDF or creating a note', completed: false, sortOrder: 2 },
+      ],
+      createdAt: ts,
+      updatedAt: ts,
     }
+    await db.put('tasks', sampleTask)
 
-    await db.put('dsaProblems', {
-      id: newId(),
-      userId,
-      title: 'Two Sum',
-      platform: 'LeetCode',
-      url: 'https://leetcode.com/problems/two-sum/',
-      difficulty: DsaDifficulty.Easy,
-      status: DsaStatus.ToSolve,
-      topics: ['Array', 'Hash Map'],
-      tags: ['warmup'],
-      attempts: 0,
-      createdAt: ts,
-      updatedAt: ts,
-    } satisfies DsaProblem)
-
-    await db.put('projects', {
-      id: newId(),
-      userId,
-      title: 'Personal portfolio site',
-      description: 'React portfolio with project case studies',
-      status: ProjectStatus.InProgress,
-      subjectId: byName['Computer Science']!.id,
-      startDate: toLocalDateString(addDays(today, -14)),
-      targetDate: toLocalDateString(addDays(today, 21)),
-      milestones: [
-        {
-          id: newId(),
-          title: 'Wireframes',
-          status: MilestoneStatus.Completed,
-          sortOrder: 0,
-          completedAt: ts,
-        },
-        {
-          id: newId(),
-          title: 'Build pages',
-          status: MilestoneStatus.InProgress,
-          sortOrder: 1,
-        },
-        {
-          id: newId(),
-          title: 'Deploy',
-          status: MilestoneStatus.NotStarted,
-          sortOrder: 2,
-        },
-      ],
-      techStack: ['React', 'TypeScript', 'Vite'],
-      tags: ['portfolio'],
-      createdAt: ts,
-      updatedAt: ts,
-    } satisfies Project)
-
-    await db.put('roadmaps', {
-      id: newId(),
-      userId,
-      title: 'Algorithms fundamentals',
-      description: 'Core DSA for interviews',
-      subjectId: byName['Computer Science']!.id,
-      status: RoadmapStatus.Active,
-      targetDate: toLocalDateString(addDays(today, 60)),
-      milestones: [
-        {
-          id: newId(),
-          title: 'Arrays & Hashing',
-          status: MilestoneStatus.InProgress,
-          sortOrder: 0,
-        },
-        {
-          id: newId(),
-          title: 'Two Pointers',
-          status: MilestoneStatus.NotStarted,
-          sortOrder: 1,
-        },
-        {
-          id: newId(),
-          title: 'Trees & Graphs',
-          status: MilestoneStatus.NotStarted,
-          sortOrder: 2,
-        },
-      ],
-      tags: ['dsa', 'career'],
-      createdAt: ts,
-      updatedAt: ts,
-    } satisfies Roadmap)
-
-    await db.put('weeklyGoals', {
-      id: newId(),
-      userId,
-      weekStart: format(
-        addDays(today, -((today.getDay() + 6) % 7)),
-        'yyyy-MM-dd',
-      ),
-      title: 'Study 10 focused hours',
-      targetMinutes: 600,
-      targetTasks: 8,
-      completedMinutes: 120,
-      completedTasks: 1,
-      createdAt: ts,
-      updatedAt: ts,
-    } satisfies WeeklyGoal)
-
-    await db.put('notifications', {
-      id: newId(),
-      userId,
-      title: 'Welcome to StudentOS',
-      body: 'Your subjects and sample tasks are ready. Focus on what is due soon.',
-      type: NotificationType.System,
-      read: false,
-      createdAt: ts,
-      updatedAt: ts,
-    } satisfies AppNotification)
-
+    await setMeta('first-run-initialized', true)
     await setMeta('seeded', true)
     await setMeta('demoUserId', userId)
+    try {
+      localStorage.setItem('studentos-first-run-done', '1')
+    } catch {
+      /* ignore */
+    }
   }
 
   /* -------------------------------------------------------------------- */
@@ -412,20 +195,72 @@ export class LocalRepository {
     await this.ensureSeeded(userId)
     const db = await getDB()
     const all = await db.getAllFromIndex('profiles', 'by-user', userId)
-    return all[0]
+    let profile = all[all.length - 1] ?? all[0]
+
+    // LocalStorage single source of truth synchronization
+    try {
+      const stored = localStorage.getItem('studentos-display-name')?.trim()
+      if (stored) {
+        if (!profile) {
+          const ts = nowIso()
+          profile = {
+            id: newId(),
+            userId,
+            displayName: stored,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+            createdAt: ts,
+            updatedAt: ts,
+          }
+          await db.put('profiles', profile)
+        } else if (profile.displayName !== stored) {
+          profile.displayName = stored
+          await db.put('profiles', profile)
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    return profile
   }
 
-  async upsertProfile(input: CreateInput<Profile>): Promise<Profile> {
+  async upsertProfile(
+    input: CreateInput<Profile> & { userId?: string },
+  ): Promise<Profile> {
     const db = await getDB()
-    const existing = input.id ? await db.get('profiles', input.id) : undefined
+    const userId = input.userId ?? DEMO_USER_ID
+    let existing: Profile | undefined
+
+    if (input.id) {
+      existing = await db.get('profiles', input.id)
+    }
+    if (!existing) {
+      const all = await db.getAllFromIndex('profiles', 'by-user', userId)
+      existing = all[all.length - 1] ?? all[0]
+    }
+
+    const cleanName =
+      (input.displayName ?? existing?.displayName ?? 'Student').trim() || 'Student'
+    try {
+      localStorage.setItem('studentos-display-name', cleanName)
+    } catch {
+      /* ignore */
+    }
+
     const profile = withTimestamps(
       {
         ...existing,
         ...input,
-        id: input.id ?? existing?.id ?? newId(),
+        id: existing?.id ?? input.id ?? newId(),
+        timezone:
+          input.timezone ??
+          existing?.timezone ??
+          (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'),
+        userId,
+        displayName: cleanName,
       },
       !existing,
     ) as Profile
+
     await db.put('profiles', profile)
     return profile
   }
@@ -475,6 +310,70 @@ export class LocalRepository {
   async deleteSubject(id: string): Promise<void> {
     const db = await getDB()
     await db.delete('subjects', id)
+    await this.deleteAttendanceBySubject(id)
+  }
+
+  /* -------------------------------------------------------------------- */
+  /* Attendance                                                           */
+  /* -------------------------------------------------------------------- */
+
+  async listAttendance(userId = DEMO_USER_ID): Promise<AttendanceRecord[]> {
+    await this.ensureSeeded(userId)
+    const db = await getDB()
+    return db.getAllFromIndex('attendance', 'by-user', userId)
+  }
+
+  async getAttendanceBySubject(subjectId: string): Promise<AttendanceRecord[]> {
+    const db = await getDB()
+    return db.getAllFromIndex('attendance', 'by-subject', subjectId)
+  }
+
+  async recordAttendance(
+    input: CreateInput<AttendanceRecord> & { userId: string },
+  ): Promise<AttendanceRecord> {
+    const db = await getDB()
+    const rec = withTimestamps(
+      {
+        ...input,
+        id: input.id ?? newId(),
+      },
+      true,
+    ) as AttendanceRecord
+    await db.put('attendance', rec)
+    return rec
+  }
+
+  async updateAttendance(
+    id: string,
+    patch: Partial<AttendanceRecord>,
+  ): Promise<AttendanceRecord> {
+    const db = await getDB()
+    const existing = await db.get('attendance', id)
+    if (!existing) throw new Error(`Attendance record not found: ${id}`)
+    const updated = withTimestamps(
+      {
+        ...existing,
+        ...patch,
+      },
+      false,
+    ) as AttendanceRecord
+    await db.put('attendance', updated)
+    return updated
+  }
+
+  async deleteAttendance(id: string): Promise<void> {
+    const db = await getDB()
+    await db.delete('attendance', id)
+  }
+
+  async deleteAttendanceBySubject(subjectId: string): Promise<void> {
+    const db = await getDB()
+    const records = await db.getAllFromIndex('attendance', 'by-subject', subjectId)
+    const tx = db.transaction('attendance', 'readwrite')
+    for (const r of records) {
+      await tx.store.delete(r.id)
+    }
+    await tx.done
   }
 
   /* -------------------------------------------------------------------- */
@@ -619,6 +518,17 @@ export class LocalRepository {
     const attachments = [...(note.attachments ?? []), attachment]
     const updated = await this.updateNote(noteId, { attachments })
     return { note: updated, attachment }
+  }
+
+  async removeNoteAttachment(noteId: string, attachmentId: string): Promise<Note> {
+    const note = await this.getNote(noteId)
+    if (!note) throw new Error(`Note not found: ${noteId}`)
+    const att = (note.attachments ?? []).find((a) => a.id === attachmentId)
+    if (att?.blobId) {
+      await this.deleteFileBlob(att.blobId).catch(() => {})
+    }
+    const attachments = (note.attachments ?? []).filter((a) => a.id !== attachmentId)
+    return this.updateNote(noteId, { attachments })
   }
 
   /* -------------------------------------------------------------------- */

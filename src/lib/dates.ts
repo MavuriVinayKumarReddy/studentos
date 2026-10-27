@@ -35,6 +35,12 @@ export function combineLocalDateTime(
   return day
 }
 
+export function parseLocalDate(dateStr: string): Date {
+  const parsed = parse(dateStr, 'yyyy-MM-dd', new Date())
+  if (isValid(parsed)) return parsed
+  return parseISO(dateStr)
+}
+
 export function startOfLocalDay(date: Date = new Date()): Date {
   return startOfDay(date)
 }

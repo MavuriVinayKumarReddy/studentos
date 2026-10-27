@@ -2,6 +2,7 @@ import { isSupabaseConfigured } from '@/lib/supabase'
 import { localRepo, LocalRepository } from '@/repositories/local-repository'
 import type {
   AppNotification,
+  AttendanceRecord,
   DsaProblem,
   FileBlobRecord,
   LearningResource,
@@ -84,6 +85,28 @@ export class DataAccessLayer {
     return this.local.deleteSubject(id)
   }
 
+  /* Attendance */
+  listAttendance(userId?: string): Promise<AttendanceRecord[]> {
+    return this.local.listAttendance(userId)
+  }
+  getAttendanceBySubject(subjectId: string): Promise<AttendanceRecord[]> {
+    return this.local.getAttendanceBySubject(subjectId)
+  }
+  recordAttendance(
+    input: Parameters<LocalRepository['recordAttendance']>[0],
+  ): Promise<AttendanceRecord> {
+    return this.local.recordAttendance(input)
+  }
+  updateAttendance(
+    id: string,
+    patch: Parameters<LocalRepository['updateAttendance']>[1],
+  ): Promise<AttendanceRecord> {
+    return this.local.updateAttendance(id, patch)
+  }
+  deleteAttendance(id: string): Promise<void> {
+    return this.local.deleteAttendance(id)
+  }
+
   /* Tasks */
   listTasks(userId?: string): Promise<Task[]> {
     return this.local.listTasks(userId)
@@ -135,6 +158,9 @@ export class DataAccessLayer {
     file: File,
   ): Promise<{ note: Note; attachment: NoteAttachment }> {
     return this.local.addNoteAttachment(noteId, file)
+  }
+  removeNoteAttachment(noteId: string, attachmentId: string): Promise<Note> {
+    return this.local.removeNoteAttachment(noteId, attachmentId)
   }
 
   /* Notes */

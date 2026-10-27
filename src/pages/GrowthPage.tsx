@@ -8,41 +8,25 @@ import { Progress } from '@/components/ui/progress'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toLocalDateString, getWeekStart } from '@/lib/dates'
+import { RoadmapManager } from '@/components/growth/RoadmapManager'
 import {
   DsaDifficulty,
   DsaStatus,
-  MilestoneStatus,
   ProjectStatus,
   ResourceType,
-  RoadmapStatus,
 } from '@/types'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
 type Tab = 'roadmaps' | 'dsa' | 'courses' | 'projects' | 'goals'
 
-const STARTER_ROADMAPS = [
-  'Data Structures and Algorithms',
-  'C++ and OOP',
-  'Python',
-  'Web Development',
-  'Machine Learning',
-  'Generative AI',
-  'System Design',
-  'Interview Preparation',
-]
-
 export function GrowthPage() {
   const {
     userId,
-    roadmaps,
     dsaProblems,
     resources,
     projects,
     goals,
-    createRoadmap,
-    updateRoadmap,
-    deleteRoadmap,
     createDsaProblem,
     updateDsaProblem,
     deleteDsaProblem,
@@ -102,129 +86,7 @@ export function GrowthPage() {
         ))}
       </div>
 
-      {tab === 'roadmaps' && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={async () => {
-                const title = prompt('Roadmap title')
-                if (!title?.trim()) return
-                await createRoadmap({
-                  userId,
-                  title: title.trim(),
-                  description: '',
-                  status: RoadmapStatus.Active,
-                  milestones: [
-                    {
-                      id: crypto.randomUUID(),
-                      title: 'Getting started',
-                      status: MilestoneStatus.NotStarted,
-                      sortOrder: 0,
-                    },
-                  ],
-                  tags: [],
-                })
-                toast.success('Roadmap created')
-              }}
-            >
-              <Plus className="size-4" /> Custom roadmap
-            </Button>
-            {STARTER_ROADMAPS.map((name) => (
-              <Button
-                key={name}
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  await createRoadmap({
-                    userId,
-                    title: name,
-                    description: `Starter roadmap for ${name}`,
-                    status: RoadmapStatus.Active,
-                    milestones: ['Basics', 'Practice', 'Projects', 'Review'].map((t, i) => ({
-                      id: crypto.randomUUID(),
-                      title: t,
-                      status: MilestoneStatus.NotStarted,
-                      sortOrder: i,
-                    })),
-                    tags: ['starter'],
-                  })
-                  toast.success(`Added ${name}`)
-                }}
-              >
-                + {name}
-              </Button>
-            ))}
-          </div>
-          {roadmaps.length === 0 ? (
-            <EmptyState title="No roadmaps" description="Add a starter or create your own." />
-          ) : (
-            roadmaps.map((r) => {
-              const done = r.milestones.filter((m) => m.status === 'Completed').length
-              const pct = r.milestones.length
-                ? Math.round((done / r.milestones.length) * 100)
-                : 0
-              return (
-                <Card key={r.id}>
-                  <CardHeader className="flex-row items-start justify-between gap-2 space-y-0">
-                    <div>
-                      <CardTitle>{r.title}</CardTitle>
-                      <p className="mt-1 text-sm text-muted-foreground">{r.description}</p>
-                    </div>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      onClick={async () => {
-                        if (!confirm('Delete roadmap?')) return
-                        await deleteRoadmap(r.id)
-                      }}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <Progress value={pct} />
-                    <p className="text-xs text-muted-foreground">
-                      {pct}% · {done}/{r.milestones.length} milestones
-                    </p>
-                    <ul className="space-y-2">
-                      {r.milestones.map((m) => (
-                        <li key={m.id} className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={m.status === 'Completed'}
-                            onChange={() =>
-                              updateRoadmap(r.id, {
-                                milestones: r.milestones.map((x) =>
-                                  x.id === m.id
-                                    ? {
-                                        ...x,
-                                        status:
-                                          x.status === 'Completed'
-                                            ? MilestoneStatus.NotStarted
-                                            : MilestoneStatus.Completed,
-                                        completedAt:
-                                          x.status === 'Completed'
-                                            ? undefined
-                                            : new Date().toISOString(),
-                                      }
-                                    : x,
-                                ),
-                              })
-                            }
-                          />
-                          <span className={m.status === 'Completed' ? 'line-through' : ''}>
-                            {m.title}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              )
-            })
-          )}
-        </div>
-      )}
+      {tab === 'roadmaps' && <RoadmapManager />}
 
       {tab === 'dsa' && (
         <div className="space-y-4">

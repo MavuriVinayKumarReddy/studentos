@@ -2,6 +2,7 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 
 import type {
   AppNotification,
+  AttendanceRecord,
   DsaProblem,
   FileBlobRecord,
   LearningResource,
@@ -17,7 +18,7 @@ import type {
 } from '@/types'
 
 export const DB_NAME = 'StudentOSDB'
-export const DB_VERSION = 1
+export const DB_VERSION = 2
 
 export interface StudentOSDB extends DBSchema {
   profiles: {
@@ -29,6 +30,15 @@ export interface StudentOSDB extends DBSchema {
     key: string
     value: Subject
     indexes: { 'by-user': string }
+  }
+  attendance: {
+    key: string
+    value: AttendanceRecord
+    indexes: {
+      'by-user': string
+      'by-subject': string
+      'by-date': string
+    }
   }
   tasks: {
     key: string
@@ -111,6 +121,13 @@ export function getDB(): Promise<IDBPDatabase<StudentOSDB>> {
         if (!db.objectStoreNames.contains('subjects')) {
           const store = db.createObjectStore('subjects', { keyPath: 'id' })
           store.createIndex('by-user', 'userId')
+        }
+
+        if (!db.objectStoreNames.contains('attendance')) {
+          const store = db.createObjectStore('attendance', { keyPath: 'id' })
+          store.createIndex('by-user', 'userId')
+          store.createIndex('by-subject', 'subjectId')
+          store.createIndex('by-date', 'date')
         }
 
         if (!db.objectStoreNames.contains('tasks')) {

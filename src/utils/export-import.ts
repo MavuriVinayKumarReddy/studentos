@@ -1,6 +1,6 @@
 import type { Task } from '@/types'
 import { Priority, TaskStatus, TaskType } from '@/types'
-import { dataStore } from '@/repositories'
+import { dataStore, getDB } from '@/repositories'
 import { DEMO_USER_ID } from '@/lib/constants'
 
 const TASK_CSV_HEADERS = [
@@ -69,6 +69,7 @@ export async function exportAllJson(
     subjects,
     tasks,
     notes,
+    attendance,
     roadmaps,
     dsaProblems,
     projects,
@@ -81,6 +82,7 @@ export async function exportAllJson(
     dataStore.listSubjects(userId),
     dataStore.listTasks(userId),
     dataStore.listNotes(userId),
+    dataStore.listAttendance(userId),
     dataStore.listRoadmaps(userId),
     dataStore.listDsaProblems(userId),
     dataStore.listProjects(userId),
@@ -92,11 +94,12 @@ export async function exportAllJson(
 
   const payload = {
     exportedAt: new Date().toISOString(),
-    version: 1,
+    version: 2,
     profile,
     subjects,
     tasks,
     notes,
+    attendance,
     roadmaps,
     dsaProblems,
     projects,
@@ -110,6 +113,53 @@ export async function exportAllJson(
     filename,
     new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
   )
+}
+
+export async function importAllJson(jsonText: string, userId = DEMO_USER_ID) {
+  const data = JSON.parse(jsonText)
+  const db = await getDB()
+
+  if (data.profile) {
+    await dataStore.upsertProfile({ ...data.profile, userId })
+  }
+  if (Array.isArray(data.subjects)) {
+    for (const sub of data.subjects) {
+      await db.put('subjects', { ...sub, userId })
+    }
+  }
+  if (Array.isArray(data.attendance)) {
+    for (const att of data.attendance) {
+      await db.put('attendance', { ...att, userId })
+    }
+  }
+  if (Array.isArray(data.tasks)) {
+    for (const task of data.tasks) {
+      await db.put('tasks', { ...task, userId })
+    }
+  }
+  if (Array.isArray(data.notes)) {
+    for (const note of data.notes) {
+      await db.put('notes', { ...note, userId })
+    }
+  }
+  if (Array.isArray(data.roadmaps)) {
+    for (const r of data.roadmaps) await db.put('roadmaps', { ...r, userId })
+  }
+  if (Array.isArray(data.dsaProblems)) {
+    for (const p of data.dsaProblems) await db.put('dsaProblems', { ...p, userId })
+  }
+  if (Array.isArray(data.projects)) {
+    for (const p of data.projects) await db.put('projects', { ...p, userId })
+  }
+  if (Array.isArray(data.resources)) {
+    for (const r of data.resources) await db.put('learningResources', { ...r, userId })
+  }
+  if (Array.isArray(data.sessions)) {
+    for (const s of data.sessions) await db.put('studySessions', { ...s, userId })
+  }
+  if (Array.isArray(data.goals)) {
+    for (const g of data.goals) await db.put('weeklyGoals', { ...g, userId })
+  }
 }
 
 function parseCsvLine(line: string): string[] {

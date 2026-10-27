@@ -22,6 +22,7 @@ import { TASK_TYPES, PRIORITIES, TASK_STATUSES, MAX_FILE_SIZE, ALLOWED_MIME_TYPE
 import type { Priority, TaskStatus, TaskType } from '@/types'
 import { toast } from 'sonner'
 import { dataStore } from '@/repositories'
+import { PdfViewerModal } from '@/components/attachments/PdfViewerModal'
 
 export function TaskDetailPage() {
   const { id } = useParams()
@@ -43,6 +44,14 @@ export function TaskDetailPage() {
   const task = tasks.find((t) => t.id === id)
   const subject = getSubject(task?.subjectId)
   const [uploading, setUploading] = useState(false)
+  const [pdfViewer, setPdfViewer] = useState<{
+    open: boolean
+    blobId?: string
+    filename: string
+  }>({
+    open: false,
+    filename: '',
+  })
 
   const related = useMemo(() => {
     if (!task) return []
@@ -112,6 +121,16 @@ export function TaskDetailPage() {
 
   const openAttachment = async (blobId?: string, filename?: string) => {
     if (!blobId) return
+    const isPdf = (filename || '').toLowerCase().endsWith('.pdf')
+    if (isPdf) {
+      setPdfViewer({
+        open: true,
+        blobId,
+        filename: filename || 'document.pdf',
+      })
+      return
+    }
+
     const rec = await dataStore.getFileBlob(blobId)
     if (!rec) {
       toast.error('File not found in local storage')
@@ -443,6 +462,13 @@ export function TaskDetailPage() {
           ))}
         </section>
       )}
+
+      <PdfViewerModal
+        open={pdfViewer.open}
+        onClose={() => setPdfViewer((v) => ({ ...v, open: false }))}
+        blobId={pdfViewer.blobId}
+        filename={pdfViewer.filename}
+      />
     </div>
   )
 }

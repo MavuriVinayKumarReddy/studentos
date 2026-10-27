@@ -12,6 +12,7 @@ import { DEMO_USER_ID } from '@/lib/constants'
 import { useAuth } from '@/context/AuthContext'
 import type {
   AppNotification,
+  AttendanceRecord,
   DsaProblem,
   LearningResource,
   Note,
@@ -34,6 +35,7 @@ type ResourceInput = Parameters<typeof dataStore.createLearningResource>[0]
 type SessionInput = Parameters<typeof dataStore.createStudySession>[0]
 type GoalInput = Parameters<typeof dataStore.createWeeklyGoal>[0]
 type ProfileInput = Parameters<typeof dataStore.upsertProfile>[0]
+type AttendanceInput = Parameters<typeof dataStore.recordAttendance>[0]
 
 interface AppDataContextValue {
   loading: boolean
@@ -49,6 +51,7 @@ interface AppDataContextValue {
   sessions: StudySession[]
   goals: WeeklyGoal[]
   notifications: AppNotification[]
+  attendance: AttendanceRecord[]
   refresh: () => Promise<void>
   createTask: (input: TaskInput) => Promise<Task>
   updateTask: (id: string, patch: Partial<Task>) => Promise<Task>
@@ -83,6 +86,11 @@ interface AppDataContextValue {
   upsertProfile: (input: ProfileInput) => Promise<Profile>
   addTaskAttachment: (taskId: string, file: File) => Promise<void>
   removeTaskAttachment: (taskId: string, attachmentId: string) => Promise<void>
+  addNoteAttachment: (noteId: string, file: File) => Promise<void>
+  removeNoteAttachment: (noteId: string, attachmentId: string) => Promise<void>
+  recordAttendance: (input: AttendanceInput) => Promise<AttendanceRecord>
+  updateAttendance: (id: string, patch: Partial<AttendanceRecord>) => Promise<AttendanceRecord>
+  deleteAttendance: (id: string) => Promise<void>
   resetAllData: () => Promise<void>
   getSubject: (id: string | null | undefined) => Subject | undefined
 }
@@ -105,6 +113,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<StudySession[]>([])
   const [goals, setGoals] = useState<WeeklyGoal[]>([])
   const [notifications, setNotifications] = useState<AppNotification[]>([])
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([])
 
   const refresh = useCallback(async () => {
     await dataStore.ensureSeeded(userId)
@@ -120,6 +129,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       sess,
       gls,
       notifs,
+      att,
     ] = await Promise.all([
       dataStore.getProfile(userId),
       dataStore.listSubjects(userId),
@@ -132,6 +142,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       dataStore.listStudySessions(userId),
       dataStore.listWeeklyGoals(userId),
       dataStore.listNotifications(userId),
+      dataStore.listAttendance(userId),
     ])
     setProfile(p ?? null)
     setSubjects(subs)
@@ -144,6 +155,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setSessions(sess)
     setGoals(gls)
     setNotifications(notifs)
+    setAttendance(att)
   }, [userId])
 
   useEffect(() => {
@@ -183,6 +195,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       sessions,
       goals,
       notifications,
+      attendance,
       refresh,
       createTask: (input) =>
         after(() => dataStore.createTask({ ...input, userId: input.userId ?? userId })),
@@ -257,6 +270,22 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         after(async () => {
           await dataStore.removeTaskAttachment(taskId, attachmentId)
         }),
+      addNoteAttachment: (noteId, file) =>
+        after(async () => {
+          await dataStore.addNoteAttachment(noteId, file)
+        }),
+      removeNoteAttachment: (noteId, attachmentId) =>
+        after(async () => {
+          await dataStore.removeNoteAttachment(noteId, attachmentId)
+        }),
+      recordAttendance: (input) =>
+        after(() =>
+          dataStore.recordAttendance({ ...input, userId: input.userId ?? userId }),
+        ),
+      updateAttendance: (id, patch) =>
+        after(() => dataStore.updateAttendance(id, patch)),
+      deleteAttendance: (id) =>
+        after(() => dataStore.deleteAttendance(id)),
       resetAllData: () =>
         after(async () => {
           const db = await getDB()
@@ -286,6 +315,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       sessions,
       goals,
       notifications,
+      attendance,
       refresh,
       after,
     ],

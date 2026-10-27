@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Download, Upload, Trash2, Bell, Cloud, HardDrive } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Download, Upload, Trash2, Bell, Cloud, HardDrive, ShieldCheck } from 'lucide-react'
 import { useAppData } from '@/context/AppDataContext'
 import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/hooks/useTheme'
@@ -12,6 +12,7 @@ import { dataStore } from '@/repositories'
 import {
   exportAllJson,
   exportTasksCsv,
+  importAllJson,
   importTasksCsv,
   previewTasksCsv,
   type ImportTasksPreview,
@@ -19,25 +20,41 @@ import {
 import { toast } from 'sonner'
 
 export function SettingsPage() {
-  const { profile, tasks, upsertProfile, resetAllData, userId, notifications, markAllNotificationsRead } =
+  const { profile, tasks, upsertProfile, resetAllData, userId, notifications, markAllNotificationsRead, refresh } =
     useAppData()
   const { signOut, isDemo, isConfigured, user } = useAuth()
   const { theme, setTheme } = useTheme()
-  const [displayName, setDisplayName] = useState(profile?.displayName ?? '')
+  const [displayName, setDisplayName] = useState(
+    () => profile?.displayName ?? (typeof window !== 'undefined' ? localStorage.getItem('studentos-display-name') ?? '' : ''),
+  )
   const [csvPreview, setCsvPreview] = useState<ImportTasksPreview | null>(null)
   const [notifPerm, setNotifPerm] = useState(
     typeof Notification !== 'undefined' ? Notification.permission : 'denied',
   )
   const mode = dataStore.getMode()
 
+  useEffect(() => {
+    if (profile?.displayName) {
+      setDisplayName(profile.displayName)
+    }
+  }, [profile?.displayName])
+
   const saveProfile = async () => {
+    const trimmed = displayName.trim() || 'Student'
+    setDisplayName(trimmed)
+    try {
+      localStorage.setItem('studentos-display-name', trimmed)
+    } catch {
+      /* ignore */
+    }
     await upsertProfile({
+      id: profile?.id,
       userId,
-      displayName: displayName.trim() || 'Student',
+      displayName: trimmed,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       email: profile?.email ?? user?.email,
     })
-    toast.success('Profile saved')
+    toast.success('Display name updated')
   }
 
   const requestNotifs = async () => {
@@ -134,12 +151,33 @@ export function SettingsPage() {
               variant="outline"
               onClick={async () => {
                 await exportAllJson()
-                toast.success('JSON backup downloaded (metadata; attachment blobs not embedded)')
+                toast.success('JSON backup downloaded (subjects, attendance, tasks, notes)')
               }}
             >
               <Download className="size-4" /> Export JSON backup
             </Button>
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm hover:bg-muted">
+              <Upload className="size-4" />
+              Restore JSON backup…
+              <input
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  try {
+                    const text = await file.text()
+                    await importAllJson(text, userId)
+                    await refresh()
+                    toast.success('Backup restored successfully')
+                  } catch {
+                    toast.error('Failed to restore backup — please select a valid StudentOS JSON file')
+                  }
+                }}
+              />
+            </label>
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm hover:bg-muted">
               <Upload className="size-4" />
               Import CSV…
               <input
@@ -231,6 +269,25 @@ export function SettingsPage() {
             Home screen. Local LAN IP access may need HTTPS or browser flags.
           </p>
           <InstallPrompt />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <ShieldCheck className="size-4 text-primary" /> Privacy & Local Data Safety
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>
+            StudentOS is 100% offline-first. All your subjects, attendance records, tasks, notes, and PDF attachments are stored locally on your device in IndexedDB.
+          </p>
+          <p>
+            No personal data, telemetry, analytics, or user activity is tracked or transmitted to remote servers.
+          </p>
+          <p className="rounded-lg bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-300">
+            <strong>Important:</strong> Because data is stored in your browser, clearing site data or uninstalling the PWA will delete local records. Export regular JSON backups to keep your data safe.
+          </p>
         </CardContent>
       </Card>
 

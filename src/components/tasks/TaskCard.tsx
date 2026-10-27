@@ -7,6 +7,7 @@ import {
   formatLocalDate,
   isOverdue,
   isDueToday,
+  isDueSoon,
 } from '@/lib/dates'
 import { Progress } from '@/components/ui/progress'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -101,6 +102,11 @@ export function TaskCard({
                 Tentative
               </span>
             )}
+            {(task.type === 'Exam' || task.type === 'Quiz' || task.type === 'Project') && (
+              <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-semibold text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
+                Deadline · {task.type}
+              </span>
+            )}
             {overdue && (
               <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700 dark:bg-rose-900/50 dark:text-rose-200">
                 Overdue
@@ -109,6 +115,11 @@ export function TaskCard({
             {today && !overdue && !completed && (
               <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-200">
                 Today
+              </span>
+            )}
+            {!today && !overdue && !completed && isDueSoon(task.dueDate, task.dueTime, 3) && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
+                Due Soon
               </span>
             )}
             {(task.attachments?.length ?? 0) > 0 && (

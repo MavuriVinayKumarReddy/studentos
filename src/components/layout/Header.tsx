@@ -1,6 +1,7 @@
 import { Bell, Search, User } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
+import { useAppData } from '@/context/AppDataContext'
 import { useAuth } from '@/context/AuthContext'
 import { useNotifications } from '@/hooks/useNotifications'
 import { getGreeting } from '@/lib/dates'
@@ -19,12 +20,23 @@ export function Header({
   onSearch,
   className,
 }: HeaderProps) {
-  const { user, isGuest, isDemo } = useAuth()
+  const { profile } = useAppData()
+  const { user } = useAuth()
   const { unreadCount } = useNotifications()
-  const name =
+
+  const storedName =
+    typeof window !== 'undefined'
+      ? localStorage.getItem('studentos-display-name')?.trim()
+      : null
+
+  const fullName =
+    profile?.displayName?.trim() ||
+    storedName ||
     user?.user_metadata?.display_name ||
     user?.email?.split('@')[0] ||
-    (isDemo || isGuest ? 'Alex' : 'there')
+    'Student'
+
+  const firstName = fullName.split(' ')[0] || fullName
 
   return (
     <header
@@ -40,7 +52,7 @@ export function Header({
               {getGreeting()}
             </p>
             <h1 className="truncate text-lg font-bold tracking-tight text-[var(--heading,#1E3A5F)] dark:text-foreground">
-              {title ?? `Hi, ${name}`}
+              {title ?? `Hi, ${firstName}`}
             </h1>
           </>
         ) : (

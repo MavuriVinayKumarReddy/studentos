@@ -157,6 +157,15 @@ export interface SubjectColor {
   text: string
 }
 
+export interface WeeklyScheduleItem {
+  id: string
+  /** 0 = Sun, 1 = Mon, 2 = Tue, 3 = Wed, 4 = Thu, 5 = Fri, 6 = Sat */
+  dayOfWeek: number
+  startTime?: string // HH:mm
+  endTime?: string // HH:mm
+  room?: string
+}
+
 export interface Subject extends BaseEntity {
   name: string
   code?: string
@@ -170,6 +179,21 @@ export interface Subject extends BaseEntity {
   semester?: string
   archived?: boolean
   sortOrder?: number
+  attendanceTarget?: number // Target % (default 75)
+  schedule?: WeeklyScheduleItem[]
+}
+
+export type AttendanceStatus = 'present' | 'absent' | 'cancelled'
+
+export interface AttendanceRecord extends BaseEntity {
+  subjectId: string
+  /** ISO date YYYY-MM-DD */
+  date: string
+  status: AttendanceStatus
+  /** Session index if multiple sessions on the same date: 1, 2, ... */
+  sessionNumber?: number
+  startTime?: string
+  notes?: string
 }
 
 export interface TaskSubtask {
