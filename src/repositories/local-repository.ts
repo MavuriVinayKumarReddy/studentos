@@ -1,7 +1,4 @@
-import { addDays } from 'date-fns'
-
-import { DEMO_USER_ID, MAX_FILE_SIZE, SUBJECT_COLORS } from '@/lib/constants'
-import { toLocalDateString } from '@/lib/dates'
+import { DEMO_USER_ID, MAX_FILE_SIZE } from '@/lib/constants'
 import { getDB } from '@/repositories/db'
 import type {
   AppNotification,
@@ -25,14 +22,12 @@ import {
   DsaDifficulty,
   DsaStatus,
   NotificationType,
-  Priority,
   ProjectStatus,
   ReminderChannel,
   ResourceType,
   RoadmapStatus,
   StudySessionType,
   TaskStatus,
-  TaskType,
 } from '@/types'
 
 type CreateInput<T extends { id: string; createdAt: string; updatedAt: string }> =
@@ -86,7 +81,11 @@ export class LocalRepository {
     const initialized =
       (await getMeta<boolean>('first-run-initialized')) ||
       (await getMeta<boolean>('seeded'))
-    if (initialized) return
+    if (initialized) {
+      // Clean up legacy template sample items for existing installs without touching user data
+      await this.cleanupLegacySampleData(userId)
+      return
+    }
 
     const db = await getDB()
     const subjectCount = await db.count('subjects')
@@ -95,11 +94,11 @@ export class LocalRepository {
       // Existing user data found — never overwrite or inject samples
       await setMeta('first-run-initialized', true)
       await setMeta('seeded', true)
+      await this.cleanupLegacySampleData(userId)
       return
     }
 
     const ts = nowIso()
-    const today = new Date()
 
     let initialName = 'Student'
     try {
@@ -127,63 +126,67 @@ export class LocalRepository {
     }
     await db.put('profiles', profile)
 
-    // Exactly one sample subject (editable and deletable)
-    const color = SUBJECT_COLORS[0]!
-    const sampleSubject: Subject = {
-      id: newId(),
-      userId,
-      name: 'Introduction to Computer Science (Sample)',
-      code: 'CS101',
-      colorId: color.id,
-      colorFrom: color.from,
-      colorTo: color.to,
-      instructor: 'Prof. Turing',
-      semester: 'Current Term',
-      attendanceTarget: 75,
-      schedule: [
-        { id: newId(), dayOfWeek: 1, startTime: '10:00', endTime: '11:30', room: 'Hall A' },
-        { id: newId(), dayOfWeek: 3, startTime: '10:00', endTime: '11:30', room: 'Hall A' },
-      ],
-      sortOrder: 0,
-      archived: false,
-      createdAt: ts,
-      updatedAt: ts,
-    }
-    await db.put('subjects', sampleSubject)
-
-    // Exactly one sample task (editable and deletable)
-    const sampleTask: Task = {
-      id: newId(),
-      userId,
-      title: 'Welcome to StudentOS — Explore your dashboard (Sample)',
-      subjectId: sampleSubject.id,
-      type: TaskType.Assignment,
-      description:
-        'Explore your courses, track attendance, attach PDFs, and take notes. You can freely edit or delete this sample task.',
-      dueDate: toLocalDateString(addDays(today, 2)),
-      dueTime: '18:00',
-      priority: Priority.Medium,
-      status: TaskStatus.NotStarted,
-      tentative: false,
-      estimatedMinutes: 30,
-      tags: ['sample', 'getting-started'],
-      subtasks: [
-        { id: newId(), title: 'Check today’s schedule on the dashboard', completed: false, sortOrder: 0 },
-        { id: newId(), title: 'Record class attendance for your sample subject', completed: false, sortOrder: 1 },
-        { id: newId(), title: 'Try attaching a PDF or creating a note', completed: false, sortOrder: 2 },
-      ],
-      createdAt: ts,
-      updatedAt: ts,
-    }
-    await db.put('tasks', sampleTask)
+    // IMPORTANT: As requested by the user, we start with a clean slate (0 sample subjects and 0 sample tasks).
+    // Users start with an empty dashboard and add their own courses/tasks without needing to manually delete sample data.
 
     await setMeta('first-run-initialized', true)
     await setMeta('seeded', true)
+    await setMeta('legacy-samples-cleaned-v1', true)
     await setMeta('demoUserId', userId)
     try {
       localStorage.setItem('studentos-first-run-done', '1')
     } catch {
       /* ignore */
+    }
+  }
+
+  /**
+   * Safely cleans up the initial template sample subject and sample task that were
+   * previously auto-generated on first install, while strictly preserving 100% of user data.
+   */
+  async cleanupLegacySampleData(_userId: string): Promise<void> {
+    const alreadyCleaned = await getMeta<boolean>('legacy-samples-cleaned-v1')
+    if (alreadyCleaned) return
+
+    try {
+      const db = await getDB()
+
+      // 1. Clean up only the specific sample subject
+      const allSubjects = await db.getAll('subjects')
+      const sampleSubjects = allSubjects.filter(
+        (s) =>
+          s.code === 'CS101' &&
+          (s.name.includes('(Sample)') || s.name === 'Introduction to Computer Science (Sample)'),
+      )
+
+      for (const sampleSub of sampleSubjects) {
+        await db.delete('subjects', sampleSub.id)
+
+        // Delete attendance records tied strictly to the sample subject
+        const allAtt = await db.getAll('attendance')
+        for (const att of allAtt) {
+          if (att.subjectId === sampleSub.id) {
+            await db.delete('attendance', att.id)
+          }
+        }
+      }
+
+      // 2. Clean up only the specific initial sample task
+      const allTasks = await db.getAll('tasks')
+      const sampleTasks = allTasks.filter(
+        (t) =>
+          (t.tags && t.tags.includes('sample')) ||
+          t.title.includes('(Sample)') ||
+          t.title.includes('Welcome to StudentOS — Explore your dashboard'),
+      )
+
+      for (const sampleTask of sampleTasks) {
+        await db.delete('tasks', sampleTask.id)
+      }
+
+      await setMeta('legacy-samples-cleaned-v1', true)
+    } catch (err) {
+      console.warn('Failed to clean up legacy sample items:', err)
     }
   }
 

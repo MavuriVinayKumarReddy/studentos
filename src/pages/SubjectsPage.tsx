@@ -35,14 +35,36 @@ import { toast } from 'sonner'
 import type { Subject, WeeklyScheduleItem } from '@/types'
 
 const DAYS = [
-  { day: 1, label: 'Mon' },
-  { day: 2, label: 'Tue' },
-  { day: 3, label: 'Wed' },
-  { day: 4, label: 'Thu' },
-  { day: 5, label: 'Fri' },
-  { day: 6, label: 'Sat' },
-  { day: 0, label: 'Sun' },
+  { day: 1, label: 'Mon', fullName: 'Monday' },
+  { day: 2, label: 'Tue', fullName: 'Tuesday' },
+  { day: 3, label: 'Wed', fullName: 'Wednesday' },
+  { day: 4, label: 'Thu', fullName: 'Thursday' },
+  { day: 5, label: 'Fri', fullName: 'Friday' },
+  { day: 6, label: 'Sat', fullName: 'Saturday' },
+  { day: 0, label: 'Sun', fullName: 'Sunday' },
 ]
+
+export interface DayScheduleConfig {
+  enabled: boolean
+  startTime: string
+  endTime: string
+  room: string
+}
+
+type WeekScheduleMap = Record<number, DayScheduleConfig>
+
+const DEFAULT_START_TIME = '09:00'
+const DEFAULT_END_TIME = '10:00'
+
+const createDefaultScheduleMap = (): WeekScheduleMap => ({
+  1: { enabled: false, startTime: DEFAULT_START_TIME, endTime: DEFAULT_END_TIME, room: '' },
+  2: { enabled: false, startTime: DEFAULT_START_TIME, endTime: DEFAULT_END_TIME, room: '' },
+  3: { enabled: false, startTime: DEFAULT_START_TIME, endTime: DEFAULT_END_TIME, room: '' },
+  4: { enabled: false, startTime: DEFAULT_START_TIME, endTime: DEFAULT_END_TIME, room: '' },
+  5: { enabled: false, startTime: DEFAULT_START_TIME, endTime: DEFAULT_END_TIME, room: '' },
+  6: { enabled: false, startTime: DEFAULT_START_TIME, endTime: DEFAULT_END_TIME, room: '' },
+  0: { enabled: false, startTime: DEFAULT_START_TIME, endTime: DEFAULT_END_TIME, room: '' },
+})
 
 export function SubjectsPage() {
   const {
@@ -64,9 +86,7 @@ export function SubjectsPage() {
   const [semester, setSemester] = useState('')
   const [instructor, setInstructor] = useState('')
   const [attendanceTarget, setAttendanceTarget] = useState('75')
-  const [selectedDays, setSelectedDays] = useState<number[]>([])
-  const [startTime, setStartTime] = useState('')
-  const [endTime, setEndTime] = useState('')
+  const [daySchedules, setDaySchedules] = useState<WeekScheduleMap>(createDefaultScheduleMap)
 
   // Attendance history modal state
   const [historySubject, setHistorySubject] = useState<Subject | null>(null)
@@ -79,6 +99,11 @@ export function SubjectsPage() {
     [active, attendance],
   )
 
+  const activeDaysCount = useMemo(
+    () => DAYS.filter((d) => daySchedules[d.day]?.enabled).length,
+    [daySchedules],
+  )
+
   const openCreate = () => {
     setEditing(null)
     setName('')
@@ -87,9 +112,7 @@ export function SubjectsPage() {
     setSemester('')
     setInstructor('')
     setAttendanceTarget('75')
-    setSelectedDays([])
-    setStartTime('10:00')
-    setEndTime('11:30')
+    setDaySchedules(createDefaultScheduleMap())
     setOpen(true)
   }
 
@@ -101,17 +124,80 @@ export function SubjectsPage() {
     setSemester(s.semester ?? '')
     setInstructor(s.instructor ?? '')
     setAttendanceTarget(String(s.attendanceTarget ?? 75))
-    const days = (s.schedule ?? []).map((item) => item.dayOfWeek)
-    setSelectedDays(days)
-    setStartTime(s.schedule?.[0]?.startTime ?? '10:00')
-    setEndTime(s.schedule?.[0]?.endTime ?? '11:30')
+
+    const schedMap = createDefaultScheduleMap()
+    if (s.schedule && Array.isArray(s.schedule)) {
+      for (const item of s.schedule) {
+        if (schedMap[item.dayOfWeek] !== undefined) {
+          schedMap[item.dayOfWeek] = {
+            enabled: true,
+            startTime: item.startTime || DEFAULT_START_TIME,
+            endTime: item.endTime || DEFAULT_END_TIME,
+            room: item.room || '',
+          }
+        }
+      }
+    }
+    setDaySchedules(schedMap)
     setOpen(true)
   }
 
   const toggleDay = (day: number) => {
-    setSelectedDays((prev) =>
-      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day],
-    )
+    setDaySchedules((prev) => ({
+      ...prev,
+      [day]: {
+        ...prev[day],
+        enabled: !prev[day].enabled,
+      },
+    }))
+  }
+
+  const updateDayTiming = (
+    day: number,
+    field: 'startTime' | 'endTime' | 'room',
+    value: string,
+  ) => {
+    setDaySchedules((prev) => ({
+      ...prev,
+      [day]: {
+        ...prev[day],
+        [field]: value,
+      },
+    }))
+  }
+
+  const toggleWeekdays = () => {
+    setDaySchedules((prev) => {
+      const weekdays = [1, 2, 3, 4, 5]
+      const allActive = weekdays.every((d) => prev[d]?.enabled)
+      const next = { ...prev }
+      weekdays.forEach((d) => {
+        next[d] = { ...next[d], enabled: !allActive }
+      })
+      return next
+    })
+  }
+
+  const copyFirstActiveTimesToAll = () => {
+    const activeDays = DAYS.filter((d) => daySchedules[d.day]?.enabled)
+    if (activeDays.length <= 1) {
+      toast.info('Enable at least 2 days to copy timings')
+      return
+    }
+    const first = daySchedules[activeDays[0].day]
+    setDaySchedules((prev) => {
+      const next = { ...prev }
+      activeDays.forEach((d) => {
+        next[d.day] = {
+          ...next[d.day],
+          startTime: first.startTime,
+          endTime: first.endTime,
+          room: first.room,
+        }
+      })
+      return next
+    })
+    toast.success(`Copied ${activeDays[0].fullName}'s timing to all active days`)
   }
 
   const save = async () => {
@@ -123,12 +209,18 @@ export function SubjectsPage() {
     const targetVal = Math.min(100, Math.max(0, parseInt(attendanceTarget, 10) || 75))
     const color = SUBJECT_COLORS.find((c) => c.id === colorId) ?? SUBJECT_COLORS[0]!
 
-    const schedule: WeeklyScheduleItem[] = selectedDays.map((d) => ({
-      id: crypto.randomUUID(),
-      dayOfWeek: d,
-      startTime: startTime || undefined,
-      endTime: endTime || undefined,
-    }))
+    const activeScheduleItems: WeeklyScheduleItem[] = DAYS
+      .filter((d) => daySchedules[d.day]?.enabled)
+      .map((d) => {
+        const row = daySchedules[d.day]
+        return {
+          id: crypto.randomUUID(),
+          dayOfWeek: d.day,
+          startTime: row.startTime || undefined,
+          endTime: row.endTime || undefined,
+          room: row.room?.trim() || undefined,
+        }
+      })
 
     const payload = {
       name: name.trim(),
@@ -139,7 +231,7 @@ export function SubjectsPage() {
       semester: semester || undefined,
       instructor: instructor || undefined,
       attendanceTarget: targetVal,
-      schedule: schedule.length > 0 ? schedule : undefined,
+      schedule: activeScheduleItems.length > 0 ? activeScheduleItems : undefined,
     }
 
     if (editing) {
@@ -498,19 +590,32 @@ export function SubjectsPage() {
                         </div>
                       </div>
 
-                      {/* Schedule badges */}
+                      {/* Schedule badges showing distinct timings per day */}
                       {s.schedule && s.schedule.length > 0 && (
                         <div className="mt-3 flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground">
-                          <Clock className="size-3.5" />
-                          {s.schedule.map((item) => (
-                            <span
-                              key={item.id}
-                              className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium"
-                            >
-                              {DAYS.find((d) => d.day === item.dayOfWeek)?.label ?? 'Day'}{' '}
-                              {item.startTime ? `@ ${item.startTime}` : ''}
-                            </span>
-                          ))}
+                          <Clock className="size-3.5 shrink-0" />
+                          {s.schedule.map((item) => {
+                            const dayLabel = DAYS.find((d) => d.day === item.dayOfWeek)?.label ?? 'Day'
+                            const timeStr = item.startTime
+                              ? item.endTime
+                                ? `${item.startTime} - ${item.endTime}`
+                                : `@ ${item.startTime}`
+                              : ''
+                            return (
+                              <span
+                                key={item.id}
+                                className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium border border-border/50 text-foreground/90 flex items-center gap-1"
+                              >
+                                <span className="font-bold text-primary">{dayLabel}:</span>
+                                <span>{timeStr || 'Scheduled'}</span>
+                                {item.room && (
+                                  <span className="text-muted-foreground font-normal">
+                                    ({item.room})
+                                  </span>
+                                )}
+                              </span>
+                            )
+                          })}
                         </div>
                       )}
                     </div>
@@ -555,7 +660,7 @@ export function SubjectsPage() {
 
       {/* Add / Edit Subject Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="font-display">
               {editing ? 'Edit Subject' : 'New Subject'}
@@ -625,25 +730,56 @@ export function SubjectsPage() {
               </div>
             </div>
 
-            {/* Weekly Schedule Settings */}
-            <div className="rounded-xl border border-border p-3 space-y-2 bg-muted/20">
-              <label className="text-xs font-semibold block">Weekly Schedule (optional)</label>
-              <p className="text-[11px] text-muted-foreground">
-                Select class days to surface today's scheduled classes on your Dashboard.
-              </p>
-              <div className="flex flex-wrap gap-1.5 pt-1">
+            {/* Weekly Schedule Settings (Individual Day-by-Day Timings) */}
+            <div className="rounded-2xl border border-border p-3.5 space-y-3 bg-muted/20">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <label className="text-xs font-bold block text-foreground">
+                    Weekly Schedule & Class Timings
+                  </label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Set different start & end times for each day from Monday to Sunday.
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[11px] px-2.5 rounded-lg"
+                    onClick={toggleWeekdays}
+                  >
+                    Mon–Fri
+                  </Button>
+                  {activeDaysCount > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-[11px] px-2 text-primary hover:bg-primary/10 rounded-lg"
+                      onClick={copyFirstActiveTimesToAll}
+                      title="Apply first active day's timing to all selected days"
+                    >
+                      Copy first time to all
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Day of Week Selector Chips */}
+              <div className="grid grid-cols-7 gap-1.5 pt-0.5">
                 {DAYS.map(({ day, label }) => {
-                  const active = selectedDays.includes(day)
+                  const active = daySchedules[day]?.enabled
                   return (
                     <button
                       type="button"
                       key={day}
                       onClick={() => toggleDay(day)}
                       className={cn(
-                        'h-8 w-11 rounded-lg text-xs font-semibold transition',
+                        'h-9 rounded-xl text-xs font-bold transition flex items-center justify-center border',
                         active
-                          ? 'bg-primary text-primary-foreground shadow-xs'
-                          : 'bg-card border border-border text-muted-foreground hover:bg-muted',
+                          ? 'bg-primary text-primary-foreground border-primary shadow-xs'
+                          : 'bg-card border-border/80 text-muted-foreground hover:bg-muted hover:text-foreground',
                       )}
                     >
                       {label}
@@ -652,26 +788,74 @@ export function SubjectsPage() {
                 })}
               </div>
 
-              {selectedDays.length > 0 && (
-                <div className="grid grid-cols-2 gap-2 pt-2">
-                  <div>
-                    <label className="text-[10px] text-muted-foreground block mb-0.5">Start Time</label>
-                    <Input
-                      type="time"
-                      value={startTime}
-                      onChange={(e) => setStartTime(e.target.value)}
-                      className="text-xs h-8"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-muted-foreground block mb-0.5">End Time</label>
-                    <Input
-                      type="time"
-                      value={endTime}
-                      onChange={(e) => setEndTime(e.target.value)}
-                      className="text-xs h-8"
-                    />
-                  </div>
+              {/* Day-by-Day Timings Configuration List */}
+              {activeDaysCount === 0 ? (
+                <div className="rounded-xl border border-dashed border-border/70 p-3 text-center text-xs text-muted-foreground bg-card/50">
+                  No class days selected. Tap any day (Mon–Sun) above to configure class timings.
+                </div>
+              ) : (
+                <div className="space-y-2 pt-1 max-h-64 overflow-y-auto pr-0.5">
+                  {DAYS.filter(({ day }) => daySchedules[day]?.enabled).map(({ day, fullName }) => {
+                    const row = daySchedules[day]
+                    return (
+                      <div
+                        key={day}
+                        className="rounded-xl border border-border/80 bg-card p-2.5 shadow-xs space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                            <span className="size-2 rounded-full bg-primary" />
+                            {fullName}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => toggleDay(day)}
+                            className="text-[11px] text-muted-foreground hover:text-destructive transition px-1"
+                            aria-label={`Remove ${fullName}`}
+                          >
+                            Remove
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          <div>
+                            <label className="text-[10px] font-medium text-muted-foreground block mb-0.5">
+                              Start Time
+                            </label>
+                            <Input
+                              type="time"
+                              value={row.startTime}
+                              onChange={(e) => updateDayTiming(day, 'startTime', e.target.value)}
+                              className="text-xs h-8"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-medium text-muted-foreground block mb-0.5">
+                              End Time
+                            </label>
+                            <Input
+                              type="time"
+                              value={row.endTime}
+                              onChange={(e) => updateDayTiming(day, 'endTime', e.target.value)}
+                              className="text-xs h-8"
+                            />
+                          </div>
+                          <div className="col-span-2 sm:col-span-1">
+                            <label className="text-[10px] font-medium text-muted-foreground block mb-0.5">
+                              Room / Lab (optional)
+                            </label>
+                            <Input
+                              type="text"
+                              placeholder="e.g. Hall A, Lab 2"
+                              value={row.room}
+                              onChange={(e) => updateDayTiming(day, 'room', e.target.value)}
+                              className="text-xs h-8"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>

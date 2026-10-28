@@ -301,7 +301,7 @@ export function SettingsPage() {
           <Button
             variant="destructive"
             onClick={async () => {
-              if (!confirm('Reset ALL local StudentOS data and reseed demo? This cannot be undone.'))
+              if (!confirm('Reset ALL local StudentOS data and start fresh? This cannot be undone.'))
                 return
               await resetAllData()
               toast.success('Data reset')

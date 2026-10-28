@@ -453,7 +453,8 @@ export function HomePage() {
                       <h3 className="font-bold text-sm truncate">{subject.name}</h3>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5 ml-4">
-                      {item.startTime ? `${item.startTime} - ${item.endTime ?? ''}` : 'Today'}
+                      {item.startTime ? `${item.startTime}${item.endTime ? ` - ${item.endTime}` : ''}` : 'Today'}
+                      {item.room ? ` · ${item.room}` : ''}
                       {subject.instructor ? ` · Prof. ${subject.instructor}` : ''}
                     </p>
                   </div>

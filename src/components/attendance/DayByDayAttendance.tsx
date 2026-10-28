@@ -47,7 +47,7 @@ export function DayByDayAttendance() {
 
   // Scheduled classes for this weekday
   const scheduledForDay = useMemo(() => {
-    const list: { subject: Subject; startTime?: string; endTime?: string }[] = []
+    const list: { subject: Subject; startTime?: string; endTime?: string; room?: string }[] = []
     for (const sub of activeSubjects) {
       if (sub.schedule) {
         for (const item of sub.schedule) {
@@ -56,6 +56,7 @@ export function DayByDayAttendance() {
               subject: sub,
               startTime: item.startTime,
               endTime: item.endTime,
+              room: item.room,
             })
           }
         }
@@ -216,6 +217,7 @@ export function DayByDayAttendance() {
       subject: Subject
       startTime?: string
       endTime?: string
+      room?: string
       record?: AttendanceRecord
       isScheduled: boolean
     }[] = []
@@ -227,6 +229,7 @@ export function DayByDayAttendance() {
         subject: item.subject,
         startTime: item.startTime,
         endTime: item.endTime,
+        room: item.room,
         record: rec,
         isScheduled: true,
       })
@@ -427,7 +430,15 @@ export function DayByDayAttendance() {
           </span>
         </div>
 
-        {displayedSubjects.length === 0 ? (
+        {activeSubjects.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border p-6 text-center space-y-2 bg-card">
+            <AlertCircle className="size-8 mx-auto text-muted-foreground/60" />
+            <p className="text-sm font-semibold text-foreground">No subjects added yet</p>
+            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+              Add your subjects in the All Subjects tab to configure your weekly class schedule and start tracking day-by-day attendance.
+            </p>
+          </div>
+        ) : displayedSubjects.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border p-6 text-center space-y-2 bg-card">
             <AlertCircle className="size-8 mx-auto text-muted-foreground/60" />
             <p className="text-sm font-semibold text-foreground">No classes scheduled for this day</p>
@@ -437,7 +448,7 @@ export function DayByDayAttendance() {
           </div>
         ) : (
           <div className="space-y-3">
-            {displayedSubjects.map(({ subject, startTime, endTime, record, isScheduled }) => {
+            {displayedSubjects.map(({ subject, startTime, endTime, room, record, isScheduled }) => {
               const isPresent = record?.status === 'present'
               const isAbsent = record?.status === 'absent'
               const isCancelled = record?.status === 'cancelled'
@@ -475,6 +486,7 @@ export function DayByDayAttendance() {
                       ) : (
                         <span>No fixed timing</span>
                       )}
+                      {room && <span>· {room}</span>}
                       {subject.instructor && <span>· Prof. {subject.instructor}</span>}
                       {record?.notes && <span className="italic">· &quot;{record.notes}&quot;</span>}
                     </div>
