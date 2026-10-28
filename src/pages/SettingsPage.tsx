@@ -4,7 +4,7 @@ import { useAppData } from '@/context/AppDataContext'
 import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/hooks/useTheme'
 import { ThemeToggle } from '@/components/layout/ThemeToggle'
-import { InstallPrompt } from '@/components/layout/InstallPrompt'
+import { InstallButton } from '@/components/layout/InstallPrompt'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -260,15 +260,17 @@ export function SettingsPage() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Install StudentOS (PWA)</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="text-base">Install StudentOS App (PWA)</CardTitle>
+          <InstallButton />
         </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
           <p>
-            On Android Chrome: open the hosted HTTPS URL → menu → <strong>Install app</strong> / Add to
-            Home screen. Local LAN IP access may need HTTPS or browser flags.
+            Install StudentOS directly to your device home screen. It runs 100% offline, opens in standalone full-screen mode, and loads instantly without an internet connection.
           </p>
-          <InstallPrompt />
+          <div className="pt-1">
+            <InstallButton className="h-9 px-4 text-xs font-semibold" />
+          </div>
         </CardContent>
       </Card>
 

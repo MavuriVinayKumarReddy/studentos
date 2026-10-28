@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { useAppData } from '@/context/AppDataContext'
 import { useAuth } from '@/context/AuthContext'
 import { useNotifications } from '@/hooks/useNotifications'
+import { InstallButton } from '@/components/layout/InstallPrompt'
 import { getGreeting } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 
@@ -62,7 +63,8 @@ export function Header({
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1.5">
+        <InstallButton />
         <Button
           type="button"
           variant="ghost"
