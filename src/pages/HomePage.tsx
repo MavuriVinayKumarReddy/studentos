@@ -13,6 +13,8 @@ import {
   Plus,
   Search,
   XCircle,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 import { useAppData } from '@/context/AppDataContext'
 import { useAuth } from '@/context/AuthContext'
@@ -72,6 +74,7 @@ export function HomePage() {
   const [taskDueTime, setTaskDueTime] = useState('')
   const [taskPriority, setTaskPriority] = useState<Priority>(Priority.Medium)
   const [savingTask, setSavingTask] = useState(false)
+  const [showCompletedToday, setShowCompletedToday] = useState(false)
 
   // Single Source of Truth Greeting Name
   const rawName =
@@ -106,6 +109,11 @@ export function HomePage() {
 
   const todayTasks = useMemo(
     () => tasks.filter((t) => t.status !== TaskStatus.Completed && isDueToday(t.dueDate)),
+    [tasks],
+  )
+
+  const todayCompletedTasks = useMemo(
+    () => tasks.filter((t) => t.status === TaskStatus.Completed && isDueToday(t.dueDate)),
     [tasks],
   )
 
@@ -579,6 +587,40 @@ export function HomePage() {
             {todayTasks.map((t) => (
               <TaskCard key={t.id} task={t} subject={getSubject(t.subjectId)} onToggle={toggleTaskComplete} />
             ))}
+          </div>
+        )}
+
+        {/* Hidden completed tasks for today */}
+        {todayCompletedTasks.length > 0 && (
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => setShowCompletedToday((prev) => !prev)}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground font-semibold transition py-1"
+            >
+              {showCompletedToday ? (
+                <>
+                  <EyeOff className="size-3.5" />
+                  <span>Hide {todayCompletedTasks.length} completed task(s)</span>
+                </>
+              ) : (
+                <>
+                  <Eye className="size-3.5 text-primary" />
+                  <span>
+                    {todayCompletedTasks.length} completed task{todayCompletedTasks.length === 1 ? '' : 's'} hidden ·{' '}
+                    <span className="text-primary underline font-bold">Show Completed</span>
+                  </span>
+                </>
+              )}
+            </button>
+
+            {showCompletedToday && (
+              <div className="space-y-2 mt-2 pt-1 border-t border-border/50">
+                {todayCompletedTasks.map((t) => (
+                  <TaskCard key={t.id} task={t} subject={getSubject(t.subjectId)} onToggle={toggleTaskComplete} />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </section>

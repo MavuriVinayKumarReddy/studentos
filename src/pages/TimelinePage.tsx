@@ -15,6 +15,9 @@ import {
   LayoutList,
   GanttChart,
   Plus,
+  Eye,
+  EyeOff,
+  CheckCircle2,
 } from 'lucide-react'
 import { useAppData } from '@/context/AppDataContext'
 import { TaskCard } from '@/components/tasks/TaskCard'
@@ -62,6 +65,7 @@ export function TimelinePage() {
   const [type, setType] = useState('')
   const [priority, setPriority] = useState('')
   const [sortBy, setSortBy] = useState<TaskSortBy>('dueDate')
+  const [showCompleted, setShowCompleted] = useState(false)
   const [calMonth, setCalMonth] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState(toLocalDateString())
 
@@ -84,18 +88,24 @@ export function TimelinePage() {
     const next7Days = toLocalDateString(addDays(new Date(), 7))
 
     return tasks.filter((t) => {
+      // Completed tab always shows completed tasks
+      if (activeTab === 'completed') {
+        return t.status === TaskStatus.Completed
+      }
+
+      // Hide completed tasks unless showCompleted is enabled
+      if (!showCompleted && t.status === TaskStatus.Completed) {
+        return false
+      }
+
       if (activeTab === 'today') {
-        return isDueToday(t.dueDate) && t.status !== TaskStatus.Completed
+        return isDueToday(t.dueDate)
       }
       if (activeTab === 'upcoming') {
-        return (
-          t.dueDate >= today &&
-          t.dueDate <= next7Days &&
-          t.status !== TaskStatus.Completed
-        )
+        return t.dueDate >= today && t.dueDate <= next7Days
       }
       if (activeTab === 'overdue') {
-        return isOverdue(t.dueDate, t.dueTime) && t.status !== TaskStatus.Completed
+        return isOverdue(t.dueDate, t.dueTime)
       }
       if (activeTab === 'deadlines') {
         const isDeadlineType =
@@ -104,14 +114,11 @@ export function TimelinePage() {
           t.type === TaskType.Project ||
           t.priority === Priority.High ||
           t.priority === Priority.Urgent
-        return isDeadlineType && t.status !== TaskStatus.Completed
-      }
-      if (activeTab === 'completed') {
-        return t.status === TaskStatus.Completed
+        return isDeadlineType
       }
       return true
     })
-  }, [tasks, activeTab])
+  }, [tasks, activeTab, showCompleted])
 
   const filtered = useMemo(() => {
     const list = filterTasks(tabFilteredTasks, {
@@ -123,6 +130,42 @@ export function TimelinePage() {
     })
     return sortTasks(list, sortBy)
   }, [tabFilteredTasks, search, subjectId, type, priority, sortBy])
+
+  // Count how many completed tasks are currently hidden
+  const hiddenCompletedCount = useMemo(() => {
+    if (activeTab === 'completed') return 0
+    const today = toLocalDateString()
+    const next7Days = toLocalDateString(addDays(new Date(), 7))
+
+    const completedInScope = tasks.filter((t) => {
+      if (t.status !== TaskStatus.Completed) return false
+      if (activeTab === 'today') return isDueToday(t.dueDate)
+      if (activeTab === 'upcoming') return t.dueDate >= today && t.dueDate <= next7Days
+      if (activeTab === 'overdue') return isOverdue(t.dueDate, t.dueTime)
+      if (activeTab === 'deadlines') {
+        return (
+          t.type === TaskType.Exam ||
+          t.type === TaskType.Quiz ||
+          t.type === TaskType.Project ||
+          t.priority === Priority.High ||
+          t.priority === Priority.Urgent
+        )
+      }
+      return true
+    })
+
+    return filterTasks(completedInScope, {
+      search: search || undefined,
+      subjectId: subjectId || undefined,
+      type: (type as TaskType) || undefined,
+      priority: (priority as Priority) || undefined,
+      includeCompleted: true,
+    }).length
+  }, [tasks, activeTab, search, subjectId, type, priority])
+
+  const totalCompletedCount = useMemo(() => {
+    return tasks.filter((t) => t.status === TaskStatus.Completed).length
+  }, [tasks])
 
   const grouped = useMemo(() => {
     const map = new Map<string, typeof filtered>()
@@ -237,35 +280,64 @@ export function TimelinePage() {
         </div>
       </div>
 
-      {/* Quick Filter Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-        {(
-          [
-            ['all', 'All Tasks'],
-            ['today', 'Today'],
-            ['upcoming', 'Upcoming (7d)'],
-            ['overdue', 'Overdue'],
-            ['deadlines', 'Deadlines & Exams'],
-            ['completed', 'Completed'],
-          ] as const
-        ).map(([tabKey, label]) => {
-          const active = activeTab === tabKey
-          return (
-            <button
-              key={tabKey}
-              type="button"
-              onClick={() => setActiveTab(tabKey)}
-              className={cn(
-                'shrink-0 rounded-full px-3.5 py-1.5 font-semibold transition border',
-                active
-                  ? 'bg-primary text-primary-foreground border-primary shadow-xs'
-                  : 'bg-card border-border/70 text-muted-foreground hover:bg-muted hover:text-foreground',
-              )}
-            >
-              {label}
-            </button>
-          )
-        })}
+      {/* Quick Filter Tabs & Show Completed Toggle */}
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-1 text-xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+          {(
+            [
+              ['all', 'All Tasks'],
+              ['today', 'Today'],
+              ['upcoming', 'Upcoming (7d)'],
+              ['overdue', 'Overdue'],
+              ['deadlines', 'Deadlines & Exams'],
+              ['completed', 'Completed'],
+            ] as const
+          ).map(([tabKey, label]) => {
+            const active = activeTab === tabKey
+            return (
+              <button
+                key={tabKey}
+                type="button"
+                onClick={() => setActiveTab(tabKey)}
+                className={cn(
+                  'shrink-0 rounded-full px-3.5 py-1.5 font-semibold transition border',
+                  active
+                    ? 'bg-primary text-primary-foreground border-primary shadow-xs'
+                    : 'bg-card border-border/70 text-muted-foreground hover:bg-muted hover:text-foreground',
+                )}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+
+        {activeTab !== 'completed' && (
+          <button
+            type="button"
+            onClick={() => setShowCompleted((prev) => !prev)}
+            className={cn(
+              'shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 font-semibold transition border text-xs ml-auto',
+              showCompleted
+                ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                : 'bg-card border-border/80 text-muted-foreground hover:bg-muted hover:text-foreground',
+            )}
+          >
+            {showCompleted ? (
+              <>
+                <EyeOff className="size-3.5" />
+                <span>Hide Completed</span>
+              </>
+            ) : (
+              <>
+                <Eye className="size-3.5 text-primary" />
+                <span>
+                  Show Completed {hiddenCompletedCount > 0 ? `(${hiddenCompletedCount})` : totalCompletedCount > 0 ? `(${totalCompletedCount})` : ''}
+                </span>
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Search and Secondary Filter Controls */}
@@ -538,6 +610,45 @@ export function TimelinePage() {
               <EmptyState title="No matching tasks" />
             </div>
           )}
+        </div>
+      )}
+
+      {/* Hidden / Shown Completed Tasks Banner */}
+      {activeTab !== 'completed' && hiddenCompletedCount > 0 && !showCompleted && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4 text-xs">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
+            <span>
+              <strong>{hiddenCompletedCount} completed task{hiddenCompletedCount === 1 ? '' : 's'}</strong> hidden after completion.
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 rounded-xl text-xs font-semibold bg-card border-border/80 text-foreground hover:bg-muted"
+            onClick={() => setShowCompleted(true)}
+          >
+            <Eye className="size-3.5 mr-1.5 text-primary" /> Show Hidden Tasks
+          </Button>
+        </div>
+      )}
+
+      {activeTab !== 'completed' && showCompleted && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-50/40 dark:bg-emerald-950/20 p-4 text-xs">
+          <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
+            <Eye className="size-4 text-emerald-600 shrink-0" />
+            <span>
+              Showing all tasks (including completed tasks).
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 rounded-xl text-xs font-semibold bg-card border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-muted"
+            onClick={() => setShowCompleted(false)}
+          >
+            <EyeOff className="size-3.5 mr-1.5" /> Hide Completed Tasks
+          </Button>
         </div>
       )}
 
